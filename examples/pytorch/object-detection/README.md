@@ -21,6 +21,7 @@ This directory contains 2 scripts that showcase how to fine-tune any model suppo
 Content:
 * [PyTorch version, Trainer](#pytorch-version-trainer)
 * [PyTorch version, no Trainer](#pytorch-version-no-trainer)
+* [Optional COCO backend](#optional-coco-backend)
 * [Reload and perform inference](#reload-and-perform-inference)
 * [Note on custom data](#note-on-custom-data)
 
@@ -120,6 +121,31 @@ and boom, you're training, possibly on multiple GPUs, logging everything to all 
 
 With the default settings, the script fine-tunes a [DETR](https://huggingface.co/facebook/detr-resnet-50) model on the [CPPE-5](https://huggingface.co/datasets/cppe-5) dataset. The resulting model can be seen here: https://huggingface.co/qubvel-hf/detr-resnet-50-finetuned-10k-cppe5-no-trainer. 
 
+
+## Optional COCO backend
+
+Both scripts accept `--coco_eval_backend ultrafast` for COCO mAP/mAR evaluation.
+The default remains `pycocotools`. This only changes TorchMetrics' evaluation
+backend; image preprocessing and the model are unchanged.
+
+This integration currently depends on the unreleased TorchMetrics backend in
+[Lightning-AI/torchmetrics#3500](https://github.com/Lightning-AI/torchmetrics/pull/3500).
+A standard released TorchMetrics installation does **not** support this option yet.
+For reviewing this branch, install the pinned development build and optional package:
+
+```bash
+pip install -r requirements-ultrafast.txt
+```
+
+Then append `--coco_eval_backend ultrafast` to either training command above.
+The scripts validate the optional backend before loading the dataset or training;
+an unsupported TorchMetrics build raises an error instead of silently falling back.
+The review-only dependency pin must be replaced with a released minimum version
+before this integration is merged.
+
+Validation compares both metric callbacks and actual Trainer/Accelerate evaluation
+using a small randomly initialized DETR, without model or dataset downloads.
+This does not establish end-to-end speed or peak-memory improvements for training.
 
 ## Reload and perform inference
 

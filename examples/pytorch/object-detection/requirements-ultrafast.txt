@@ -1,0 +1,4 @@
+# Review-only: replace the TorchMetrics commit with its released minimum after PR #3500 lands.
+-r requirements.txt
+torchmetrics @ git+https://github.com/developer0hye/torchmetrics@f181bd2125bbc3a986535536afe862371338af19
+ultrafast-pycocotools>=0.1.11,<0.2

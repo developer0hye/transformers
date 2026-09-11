@@ -71,6 +71,18 @@ logger = get_logger(__name__)
 require_version("datasets>=2.0.0", "To fix: pip install -r examples/pytorch/semantic-segmentation/requirements.txt")
 
 
+def create_coco_metric(backend="pycocotools"):
+    try:
+        return MeanAveragePrecision(box_format="xyxy", class_metrics=True, backend=backend)
+    except ValueError as exc:
+        if backend != "ultrafast":
+            raise
+        raise ValueError(
+            "The ultrafast backend requires a TorchMetrics build with ultrafast support. "
+            "See the optional COCO backend section in this example's README for installation instructions."
+        ) from exc
+
+
 # Copied from examples/pytorch/object-detection/run_object_detection.format_image_annotations_as_coco
 def format_image_annotations_as_coco(
     image_id: str, categories: list[int], areas: list[float], bboxes: list[tuple[float]]
@@ -192,9 +204,10 @@ def evaluation_loop(
     accelerator: Accelerator,
     dataloader: DataLoader,
     id2label: Mapping[int, str],
+    coco_eval_backend: str = "pycocotools",
 ) -> dict:
     model.eval()
-    metric = MeanAveragePrecision(box_format="xyxy", class_metrics=True)
+    metric = create_coco_metric(coco_eval_backend)
 
     for step, batch in enumerate(tqdm(dataloader, disable=not accelerator.is_local_main_process)):
         with torch.no_grad():
@@ -388,6 +401,12 @@ def parse_args():
             "Only applicable when `--with_tracking` is passed."
         ),
     )
+    parser.add_argument(
+        "--coco_eval_backend",
+        default="pycocotools",
+        choices=["pycocotools", "ultrafast"],
+        help="COCO evaluation backend.",
+    )
     args = parser.parse_args()
 
     # Sanity checks
@@ -405,6 +424,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.coco_eval_backend == "ultrafast":
+        create_coco_metric(args.coco_eval_backend)  # Validate before loading data or training.
 
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
@@ -718,7 +739,9 @@ def main():
                 break
 
         logger.info("***** Running evaluation *****")
-        metrics = evaluation_loop(model, image_processor, accelerator, valid_dataloader, id2label)
+        metrics = evaluation_loop(
+            model, image_processor, accelerator, valid_dataloader, id2label, args.coco_eval_backend
+        )
 
         logger.info(f"epoch {epoch}: {metrics}")
 
@@ -760,7 +783,7 @@ def main():
     # ------------------------------------------------------------------------------------------------
 
     logger.info("***** Running evaluation on test dataset *****")
-    metrics = evaluation_loop(model, image_processor, accelerator, test_dataloader, id2label)
+    metrics = evaluation_loop(model, image_processor, accelerator, test_dataloader, id2label, args.coco_eval_backend)
     metrics = {f"test_{k}": v for k, v in metrics.items()}
 
     logger.info(f"Test metrics: {metrics}")

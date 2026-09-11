@@ -63,6 +63,18 @@ check_min_version("4.57.0.dev0")
 require_version("datasets>=2.0.0", "To fix: pip install -r examples/pytorch/object-detection/requirements.txt")
 
 
+def create_coco_metric(backend="pycocotools"):
+    try:
+        return MeanAveragePrecision(box_format="xyxy", class_metrics=True, backend=backend)
+    except ValueError as exc:
+        if backend != "ultrafast":
+            raise
+        raise ValueError(
+            "The ultrafast backend requires a TorchMetrics build with ultrafast support. "
+            "See the optional COCO backend section in this example's README for installation instructions."
+        ) from exc
+
+
 @dataclass
 class ModelOutput:
     logits: torch.Tensor
@@ -173,6 +185,7 @@ def compute_metrics(
     image_processor: AutoImageProcessor,
     threshold: float = 0.0,
     id2label: Mapping[int, str] | None = None,
+    coco_eval_backend: str = "pycocotools",
 ) -> Mapping[str, float]:
     """
     Compute mean average mAP, mAR and their variants for the object detection task.
@@ -181,6 +194,7 @@ def compute_metrics(
         evaluation_results (EvalPrediction): Predictions and targets from evaluation.
         threshold (float, optional): Threshold to filter predicted boxes by confidence. Defaults to 0.0.
         id2label (Optional[dict], optional): Mapping from class id to class name. Defaults to None.
+        coco_eval_backend (str, optional): TorchMetrics COCO backend. Defaults to "pycocotools".
 
     Returns:
         Mapping[str, float]: Metrics in a form of dictionary {<metric_name>: <metric_value>}
@@ -221,7 +235,7 @@ def compute_metrics(
         post_processed_predictions.extend(post_processed_output)
 
     # Compute metrics
-    metric = MeanAveragePrecision(box_format="xyxy", class_metrics=True)
+    metric = create_coco_metric(coco_eval_backend)
     metric.update(post_processed_predictions, post_processed_targets)
     metrics = metric.compute()
 
@@ -247,6 +261,10 @@ class DataTrainingArguments:
     them on the command line.
     """
 
+    coco_eval_backend: str = field(
+        default="pycocotools",
+        metadata={"help": "COCO evaluation backend.", "choices": ["pycocotools", "ultrafast"]},
+    )
     dataset_name: str = field(
         default="cppe-5",
         metadata={
@@ -347,6 +365,9 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    if data_args.coco_eval_backend == "ultrafast":
+        create_coco_metric(data_args.coco_eval_backend)  # Validate before loading data or training.
 
     # Setup logging
     logging.basicConfig(
@@ -477,7 +498,11 @@ def main():
     # ------------------------------------------------------------------------------------------------
 
     eval_compute_metrics_fn = partial(
-        compute_metrics, image_processor=image_processor, id2label=id2label, threshold=0.0
+        compute_metrics,
+        image_processor=image_processor,
+        id2label=id2label,
+        threshold=0.0,
+        coco_eval_backend=data_args.coco_eval_backend,
     )
 
     trainer = Trainer(
